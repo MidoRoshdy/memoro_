@@ -186,6 +186,8 @@ abstract final class ChatService {
     });
   }
 
+  /// Clears [uid]'s unread counter. Uses a plain read + merge write (not a
+  /// transaction) so concurrent callers do not trip native transaction timeouts.
   static Future<void> resetUnreadCount({
     required String chatId,
     required String uid,
@@ -193,29 +195,29 @@ abstract final class ChatService {
     final cleanUid = uid.trim();
     if (cleanUid.isEmpty) return;
     final ref = chatRef(chatId);
-    await _db.runTransaction((tx) async {
-      final snap = await tx.get(ref);
-      final data = snap.data();
-      final current = unreadCountForUser(data, cleanUid);
-      if (current <= 0) return;
-      final unreadMap = <String, dynamic>{
-        ...(data?['unreadCounts'] is Map
-            ? Map<String, dynamic>.from(data!['unreadCounts'] as Map)
-            : <String, dynamic>{}),
-      };
-      unreadMap[cleanUid] = 0;
-      final lastReadMap = <String, dynamic>{
-        ...(data?['lastReadAt'] is Map
-            ? Map<String, dynamic>.from(data!['lastReadAt'] as Map)
-            : <String, dynamic>{}),
-      };
-      lastReadMap[cleanUid] = FieldValue.serverTimestamp();
-      tx.set(ref, <String, dynamic>{
-        'unreadCounts': unreadMap,
-        'lastReadAt': lastReadMap,
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
-    });
+    final snap = await ref.get();
+    if (!snap.exists) return;
+    final data = snap.data();
+    final current = unreadCountForUser(data, cleanUid);
+    if (current <= 0) return;
+
+    final unreadMap = <String, dynamic>{
+      ...(data?['unreadCounts'] is Map
+          ? Map<String, dynamic>.from(data!['unreadCounts'] as Map)
+          : <String, dynamic>{}),
+    };
+    unreadMap[cleanUid] = 0;
+    final lastReadMap = <String, dynamic>{
+      ...(data?['lastReadAt'] is Map
+          ? Map<String, dynamic>.from(data!['lastReadAt'] as Map)
+          : <String, dynamic>{}),
+    };
+    lastReadMap[cleanUid] = FieldValue.serverTimestamp();
+    await ref.set(<String, dynamic>{
+      'unreadCounts': unreadMap,
+      'lastReadAt': lastReadMap,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
   }
 
   static Future<void> setInChatPresence({

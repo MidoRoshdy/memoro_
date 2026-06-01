@@ -33,42 +33,33 @@ class _ChatConversationPageState extends State<ChatConversationPage> {
   ];
 
   bool _sending = false;
-  bool _resettingUnread = false;
-  bool _inChatMarked = false;
+  bool _desiredInChat = false;
+  Future<void> _presenceQueue = Future<void>.value();
 
   @override
   void initState() {
     super.initState();
-    _markInChat(true);
-    _resetUnread();
+    // Single serialized write on enter; also zeros unread (setInChatPresence).
+    _enqueueInChat(true);
   }
 
-  Future<void> _markInChat(bool inChat) async {
-    if (_inChatMarked == inChat) return;
-    _inChatMarked = inChat;
-    await ChatService.setInChatPresence(
-      chatId: widget.chatId,
-      uid: widget.currentUserId,
-      inChat: inChat,
-    );
-  }
-
-  Future<void> _resetUnread() async {
-    if (_resettingUnread) return;
-    _resettingUnread = true;
-    try {
-      await ChatService.resetUnreadCount(
+  /// Serializes presence writes so overlapping Firestore transactions do not run.
+  Future<void> _enqueueInChat(bool inChat) {
+    if (_desiredInChat == inChat) return _presenceQueue;
+    _desiredInChat = inChat;
+    _presenceQueue = _presenceQueue.then(
+      (_) => ChatService.setInChatPresence(
         chatId: widget.chatId,
         uid: widget.currentUserId,
-      );
-    } finally {
-      _resettingUnread = false;
-    }
+        inChat: inChat,
+      ),
+    );
+    return _presenceQueue;
   }
 
   @override
   void dispose() {
-    _markInChat(false);
+    _enqueueInChat(false);
     _messageController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -212,185 +203,186 @@ class _ChatConversationPageState extends State<ChatConversationPage> {
   Widget build(BuildContext context) {
     return WillPopScope(
       onWillPop: () async {
-        await _markInChat(false);
+        await _enqueueInChat(false);
         return true;
       },
       child: Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        centerTitle: true,
-        titleSpacing: 0,
-        title: Row(
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          centerTitle: true,
+          titleSpacing: 0,
+          title: Row(
+            children: [
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'Chat With ${widget.title}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              _headerAvatar(),
+              rowSpace,
+              rowSpace,
+              rowSpace,
+              rowSpace,
+              rowSpace,
+            ],
+          ),
+        ),
+        body: Column(
           children: [
-            const SizedBox(width: 6),
             Expanded(
-              child: Text(
-                'Chat With ${widget.title}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
+              child: Container(
+                margin: const EdgeInsets.fromLTRB(10, 10, 10, 0),
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+
+                child: StreamBuilder<List<ChatMessage>>(
+                  stream: ChatService.watchMessages(widget.chatId),
+                  builder: (context, snapshot) {
+                    final messages = snapshot.data ?? const <ChatMessage>[];
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      _scrollToBottom();
+                    });
+                    return Column(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.85),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            'Today',
+                            style: Theme.of(context).textTheme.labelLarge
+                                ?.copyWith(
+                                  color: AppColorPalette.grey,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Expanded(
+                          child: ListView.builder(
+                            controller: _scrollController,
+                            padding: EdgeInsets.zero,
+                            itemCount: messages.length,
+                            itemBuilder: (context, index) {
+                              final message = messages[index];
+                              final isMine =
+                                  message.senderId == widget.currentUserId;
+                              return _messageBubble(
+                                context: context,
+                                message: message,
+                                isMine: isMine,
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ),
             ),
-            _headerAvatar(),
-            rowSpace,
-            rowSpace,
-            rowSpace,
-            rowSpace,
-            rowSpace,
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                child: Column(
+                  children: [
+                    SizedBox(
+                      height: 38,
+                      child: ListView.separated(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: _quickReplies.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 8),
+                        itemBuilder: (context, index) {
+                          final text = _quickReplies[index];
+                          return ActionChip(
+                            onPressed: _sending
+                                ? null
+                                : () => _sendQuickReply(text),
+                            backgroundColor: Colors.white.withValues(
+                              alpha: 0.8,
+                            ),
+                            label: Text(
+                              text,
+                              style: const TextStyle(
+                                color: AppColorPalette.blueSteel,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            side: BorderSide.none,
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _messageController,
+                            textInputAction: TextInputAction.send,
+                            onSubmitted: (_) => _sendMessage(),
+                            decoration: InputDecoration(
+                              hintText: 'Type message...',
+                              filled: true,
+                              fillColor: Colors.white.withValues(alpha: 0.9),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(22),
+                                borderSide: BorderSide.none,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        SizedBox(
+                          width: 44,
+                          height: 44,
+                          child: ElevatedButton(
+                            onPressed: _sending ? null : _sendMessage,
+                            style: ElevatedButton.styleFrom(
+                              padding: EdgeInsets.zero,
+                              shape: const CircleBorder(),
+                              backgroundColor: AppColorPalette.blueSteel,
+                              foregroundColor: Colors.white,
+                            ),
+                            child: _sending
+                                ? const SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Icon(Icons.send_rounded),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: Container(
-              margin: const EdgeInsets.fromLTRB(10, 10, 10, 0),
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
-
-              child: StreamBuilder<List<ChatMessage>>(
-                stream: ChatService.watchMessages(widget.chatId),
-                builder: (context, snapshot) {
-                  final messages = snapshot.data ?? const <ChatMessage>[];
-                  WidgetsBinding.instance.addPostFrameCallback((_) {
-                    _scrollToBottom();
-                  });
-                  Future.microtask(_resetUnread);
-                  return Column(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 5,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.85),
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: Text(
-                          'Today',
-                          style: Theme.of(context).textTheme.labelLarge
-                              ?.copyWith(
-                                color: AppColorPalette.grey,
-                                fontWeight: FontWeight.w700,
-                              ),
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      Expanded(
-                        child: ListView.builder(
-                          controller: _scrollController,
-                          padding: EdgeInsets.zero,
-                          itemCount: messages.length,
-                          itemBuilder: (context, index) {
-                            final message = messages[index];
-                            final isMine =
-                                message.senderId == widget.currentUserId;
-                            return _messageBubble(
-                              context: context,
-                              message: message,
-                              isMine: isMine,
-                            );
-                          },
-                        ),
-                      ),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ),
-          SafeArea(
-            top: false,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-              child: Column(
-                children: [
-                  SizedBox(
-                    height: 38,
-                    child: ListView.separated(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: _quickReplies.length,
-                      separatorBuilder: (_, __) => const SizedBox(width: 8),
-                      itemBuilder: (context, index) {
-                        final text = _quickReplies[index];
-                        return ActionChip(
-                          onPressed: _sending
-                              ? null
-                              : () => _sendQuickReply(text),
-                          backgroundColor: Colors.white.withValues(alpha: 0.8),
-                          label: Text(
-                            text,
-                            style: const TextStyle(
-                              color: AppColorPalette.blueSteel,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          side: BorderSide.none,
-                        );
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextField(
-                          controller: _messageController,
-                          textInputAction: TextInputAction.send,
-                          onSubmitted: (_) => _sendMessage(),
-                          decoration: InputDecoration(
-                            hintText: 'Type message...',
-                            filled: true,
-                            fillColor: Colors.white.withValues(alpha: 0.9),
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 12,
-                            ),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(22),
-                              borderSide: BorderSide.none,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      SizedBox(
-                        width: 44,
-                        height: 44,
-                        child: ElevatedButton(
-                          onPressed: _sending ? null : _sendMessage,
-                          style: ElevatedButton.styleFrom(
-                            padding: EdgeInsets.zero,
-                            shape: const CircleBorder(),
-                            backgroundColor: AppColorPalette.blueSteel,
-                            foregroundColor: Colors.white,
-                          ),
-                          child: _sending
-                              ? const SizedBox(
-                                  width: 18,
-                                  height: 18,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : const Icon(Icons.send_rounded),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    ),
     );
   }
 }
