@@ -39,11 +39,9 @@ class _ChatConversationPageState extends State<ChatConversationPage> {
   @override
   void initState() {
     super.initState();
-    // Single serialized write on enter; also zeros unread (setInChatPresence).
     _enqueueInChat(true);
   }
 
-  /// Serializes presence writes so overlapping Firestore transactions do not run.
   Future<void> _enqueueInChat(bool inChat) {
     if (_desiredInChat == inChat) return _presenceQueue;
     _desiredInChat = inChat;

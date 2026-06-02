@@ -76,14 +76,30 @@ class LocalNotificationService {
           importance: Importance.max,
         ),
       );
-      try {
-        final exactGranted = await androidPlugin.requestExactAlarmsPermission();
-        debugPrint('Exact alarms permission granted: $exactGranted');
-      } catch (e) {
-        debugPrint('Exact alarms permission request not available: $e');
-      }
     }
     _initialized = true;
+  }
+
+  static Future<bool> _ensureExactAlarmsPermission() async {
+    if (defaultTargetPlatform != TargetPlatform.android) return true;
+
+    final androidPlugin = _plugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >();
+    if (androidPlugin == null) return true;
+
+    final canSchedule = await androidPlugin.canScheduleExactNotifications();
+    if (canSchedule == true) return true;
+
+    try {
+      final granted = await androidPlugin.requestExactAlarmsPermission();
+      debugPrint('Exact alarms permission granted: $granted');
+      return granted ?? false;
+    } catch (e) {
+      debugPrint('Exact alarms permission request not available: $e');
+      return false;
+    }
   }
 
   static Future<void> scheduleDaily({
@@ -107,30 +123,56 @@ class LocalNotificationService {
       scheduled = scheduled.add(const Duration(days: 1));
     }
 
-    await _plugin.zonedSchedule(
-      id,
-      title,
-      body,
-      scheduled,
-      NotificationDetails(
-        android: AndroidNotificationDetails(
-          channelId,
-          channelId,
-          importance: channelId == emergencyChannelId
-              ? Importance.max
-              : Importance.high,
-          priority: channelId == emergencyChannelId
-              ? Priority.max
-              : Priority.high,
-        ),
-        iOS: const DarwinNotificationDetails(),
+    final exactAllowed = await _ensureExactAlarmsPermission();
+    final scheduleMode = exactAllowed
+        ? AndroidScheduleMode.exactAllowWhileIdle
+        : AndroidScheduleMode.inexactAllowWhileIdle;
+    final details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        channelId,
+        channelId,
+        importance: channelId == emergencyChannelId
+            ? Importance.max
+            : Importance.high,
+        priority: channelId == emergencyChannelId
+            ? Priority.max
+            : Priority.high,
       ),
-      payload: jsonEncode(payload),
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      uiLocalNotificationDateInterpretation:
-          UILocalNotificationDateInterpretation.absoluteTime,
-      matchDateTimeComponents: DateTimeComponents.time,
+      iOS: const DarwinNotificationDetails(),
     );
+
+    try {
+      await _plugin.zonedSchedule(
+        id,
+        title,
+        body,
+        scheduled,
+        details,
+        payload: jsonEncode(payload),
+        androidScheduleMode: scheduleMode,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        matchDateTimeComponents: DateTimeComponents.time,
+      );
+    } on PlatformException catch (e) {
+      if (scheduleMode == AndroidScheduleMode.exactAllowWhileIdle) {
+        debugPrint('Daily exact schedule failed, fallback inexact: $e');
+        await _plugin.zonedSchedule(
+          id,
+          title,
+          body,
+          scheduled,
+          details,
+          payload: jsonEncode(payload),
+          androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+          uiLocalNotificationDateInterpretation:
+              UILocalNotificationDateInterpretation.absoluteTime,
+          matchDateTimeComponents: DateTimeComponents.time,
+        );
+      } else {
+        rethrow;
+      }
+    }
   }
 
   static Future<void> showNow({
@@ -181,55 +223,53 @@ class LocalNotificationService {
       await initialize(onTapPayload: (_) {});
     }
     final scheduled = tz.TZDateTime.now(tz.local).add(delay);
+    final exactAllowed = await _ensureExactAlarmsPermission();
+    final scheduleMode = exactAllowed
+        ? AndroidScheduleMode.exactAllowWhileIdle
+        : AndroidScheduleMode.inexactAllowWhileIdle;
+    final details = NotificationDetails(
+      android: AndroidNotificationDetails(
+        channelId,
+        channelId,
+        importance: channelId == emergencyChannelId
+            ? Importance.max
+            : Importance.high,
+        priority: channelId == emergencyChannelId
+            ? Priority.max
+            : Priority.high,
+      ),
+      iOS: const DarwinNotificationDetails(),
+    );
+
     try {
       await _plugin.zonedSchedule(
         id,
         title,
         body,
         scheduled,
-        NotificationDetails(
-          android: AndroidNotificationDetails(
-            channelId,
-            channelId,
-            importance: channelId == emergencyChannelId
-                ? Importance.max
-                : Importance.high,
-            priority: channelId == emergencyChannelId
-                ? Priority.max
-                : Priority.high,
-          ),
-          iOS: const DarwinNotificationDetails(),
-        ),
+        details,
         payload: jsonEncode(payload),
-        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        androidScheduleMode: scheduleMode,
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime,
       );
     } on PlatformException catch (e) {
-      debugPrint('One-shot exact schedule failed, fallback inexact: $e');
-      await _plugin.zonedSchedule(
-        id,
-        title,
-        body,
-        scheduled,
-        NotificationDetails(
-          android: AndroidNotificationDetails(
-            channelId,
-            channelId,
-            importance: channelId == emergencyChannelId
-                ? Importance.max
-                : Importance.high,
-            priority: channelId == emergencyChannelId
-                ? Priority.max
-                : Priority.high,
-          ),
-          iOS: const DarwinNotificationDetails(),
-        ),
-        payload: jsonEncode(payload),
-        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
-        uiLocalNotificationDateInterpretation:
-            UILocalNotificationDateInterpretation.absoluteTime,
-      );
+      if (scheduleMode == AndroidScheduleMode.exactAllowWhileIdle) {
+        debugPrint('One-shot exact schedule failed, fallback inexact: $e');
+        await _plugin.zonedSchedule(
+          id,
+          title,
+          body,
+          scheduled,
+          details,
+          payload: jsonEncode(payload),
+          androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+          uiLocalNotificationDateInterpretation:
+              UILocalNotificationDateInterpretation.absoluteTime,
+        );
+      } else {
+        rethrow;
+      }
     }
   }
 }

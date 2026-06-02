@@ -186,8 +186,6 @@ abstract final class ChatService {
     });
   }
 
-  /// Clears [uid]'s unread counter. Uses a plain read + merge write (not a
-  /// transaction) so concurrent callers do not trip native transaction timeouts.
   static Future<void> resetUnreadCount({
     required String chatId,
     required String uid,
