@@ -44,9 +44,9 @@ abstract final class FamilyService {
     String familyDocId,
     String memberId,
   ) {
-    return _membersRef(familyDocId)
-        .doc(memberId.trim())
-        .collection(memberMemoriesSubcollection);
+    return _membersRef(
+      familyDocId,
+    ).doc(memberId.trim()).collection(memberMemoriesSubcollection);
   }
 
   static Future<void> ensureFamilyDocument({
@@ -88,8 +88,13 @@ abstract final class FamilyService {
         );
   }
 
-  static Stream<FamilyMember?> watchMember(String familyDocId, String memberId) {
-    return _membersRef(familyDocId).doc(memberId.trim()).snapshots().map((snap) {
+  static Stream<FamilyMember?> watchMember(
+    String familyDocId,
+    String memberId,
+  ) {
+    return _membersRef(familyDocId).doc(memberId.trim()).snapshots().map((
+      snap,
+    ) {
       final data = snap.data();
       if (data == null) return null;
       return FamilyMember.fromFirestore(snap.id, data);
@@ -290,6 +295,56 @@ abstract final class FamilyService {
       'hiddenForPatient': hiddenForPatient,
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
+  }
+
+  static Future<void> deleteMember({
+    required String familyDocId,
+    required String memberId,
+  }) async {
+    final trimmedId = memberId.trim();
+    final memberRef = _membersRef(familyDocId).doc(trimmedId);
+    final snap = await memberRef.get();
+    if (!snap.exists) return;
+
+    final imageUrl = (snap.data()?['imageUrl'] as String?)?.trim() ?? '';
+
+    final profileMemories = await _memberMemoriesRef(
+      familyDocId,
+      trimmedId,
+    ).get();
+    for (final doc in profileMemories.docs) {
+      final memoryImageUrl = (doc.data()['imageUrl'] as String?)?.trim() ?? '';
+      await doc.reference.delete();
+      if (memoryImageUrl.isNotEmpty) {
+        try {
+          await FirebaseStorage.instance.refFromURL(memoryImageUrl).delete();
+        } catch (_) {
+          // Best effort only.
+        }
+      }
+    }
+
+    await memberRef.delete();
+
+    final familySnap = await familyRef(familyDocId).get();
+    final favoriteId =
+        (familySnap.data()?['favoriteMemberId'] as String?)?.trim() ?? '';
+    final updates = <String, dynamic>{
+      'updatedAt': FieldValue.serverTimestamp(),
+      'membersCount': FieldValue.increment(-1),
+    };
+    if (favoriteId == trimmedId) {
+      updates['favoriteMemberId'] = FieldValue.delete();
+    }
+    await familyRef(familyDocId).set(updates, SetOptions(merge: true));
+
+    if (imageUrl.isNotEmpty) {
+      try {
+        await FirebaseStorage.instance.refFromURL(imageUrl).delete();
+      } catch (_) {
+        // Best effort only.
+      }
+    }
   }
 
   static Future<void> deleteFamilyMemory({

@@ -1,4 +1,7 @@
+import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../../core/constants/dimensions.dart';
 import '../../../../core/models/family_member.dart';
@@ -9,7 +12,7 @@ import '../../../shared/family/family_memories_gallery_page.dart';
 import '../../../shared/family/family_member_profile_page.dart';
 import 'doctor_add_family_member_page.dart';
 
-class DoctorFamilyPage extends StatelessWidget {
+class DoctorFamilyPage extends StatefulWidget {
   const DoctorFamilyPage({
     super.key,
     required this.doctorUid,
@@ -20,6 +23,13 @@ class DoctorFamilyPage extends StatelessWidget {
   final String doctorUid;
   final String patientUid;
   final String patientName;
+
+  @override
+  State<DoctorFamilyPage> createState() => _DoctorFamilyPageState();
+}
+
+class _DoctorFamilyPageState extends State<DoctorFamilyPage> {
+  bool _uploadingMemory = false;
 
   Future<void> _callMember(BuildContext context, String phone) async {
     final trimmedPhone = phone.trim();
@@ -36,6 +46,57 @@ class DoctorFamilyPage extends StatelessWidget {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Could not open phone app.')),
       );
+    }
+  }
+
+  Future<void> _addFamilyMemory() async {
+    if (_uploadingMemory) return;
+    setState(() => _uploadingMemory = true);
+    try {
+      final picked = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1400,
+        imageQuality: 85,
+      );
+      if (picked == null) return;
+      final bytes = await picked.readAsBytes();
+      final familyDocId = FamilyService.buildFamilyDocId(
+        widget.doctorUid,
+        widget.patientUid,
+      );
+      final path =
+          'familyMemories/$familyDocId/${DateTime.now().microsecondsSinceEpoch}.jpg';
+      final ref = FirebaseStorage.instance.ref(path);
+      final snap = await ref.putData(
+        bytes,
+        SettableMetadata(contentType: 'image/jpeg'),
+      );
+      final imageUrl = await snap.ref.getDownloadURL();
+      await FamilyService.addMemory(
+        familyDocId: familyDocId,
+        doctorUid: widget.doctorUid,
+        patientUid: widget.patientUid,
+        imageUrl: imageUrl,
+        createdByUid: widget.doctorUid,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Memory added for patient.')),
+      );
+    } on PlatformException {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Could not open photos.')));
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not add memory right now.')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _uploadingMemory = false);
+      }
     }
   }
 
@@ -151,6 +212,7 @@ class DoctorFamilyPage extends StatelessWidget {
     BuildContext context,
     List<FamilyMemory> memories,
     VoidCallback onSeeAll,
+    VoidCallback onAdd,
   ) {
     return Container(
       width: double.infinity,
@@ -172,6 +234,32 @@ class DoctorFamilyPage extends StatelessWidget {
                 ),
               ),
               const Spacer(),
+              if (_uploadingMemory)
+                const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              else
+                GestureDetector(
+                  onTap: onAdd,
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.25),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.add_photo_alternate_outlined,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                  ),
+                ),
+              const SizedBox(width: 8),
               GestureDetector(
                 onTap: onSeeAll,
                 child: Text(
@@ -213,26 +301,41 @@ class DoctorFamilyPage extends StatelessWidget {
               }
               if (index == 5 && memories.length > 5) {
                 final extra = memories.length - 5;
-                return Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.72),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  alignment: Alignment.center,
-                  child: Text(
-                    '+$extra\nMore',
-                    textAlign: TextAlign.center,
-                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                      color: AppColorPalette.blueSteel,
-                      fontWeight: FontWeight.w800,
+                return GestureDetector(
+                  onTap: onSeeAll,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.72),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      '+$extra\nMore',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                        color: AppColorPalette.blueSteel,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
                 );
               }
-              return Container(
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.35),
-                  borderRadius: BorderRadius.circular(10),
+              return GestureDetector(
+                onTap: _uploadingMemory ? null : onAdd,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.35),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.45),
+                      width: 1.5,
+                    ),
+                  ),
+                  child: Icon(
+                    Icons.add_rounded,
+                    color: Colors.white.withValues(alpha: 0.85),
+                    size: 28,
+                  ),
                 ),
               );
             },
@@ -244,7 +347,10 @@ class DoctorFamilyPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final familyDocId = FamilyService.buildFamilyDocId(doctorUid, patientUid);
+    final familyDocId = FamilyService.buildFamilyDocId(
+      widget.doctorUid,
+      widget.patientUid,
+    );
     return Scaffold(
       appBar: AppBar(
         title: const Text('Family'),
@@ -264,8 +370,8 @@ class DoctorFamilyPage extends StatelessWidget {
                     MaterialPageRoute<void>(
                       builder: (_) => DoctorAddFamilyMemberPage(
                         familyDocId: familyDocId,
-                        doctorUid: doctorUid,
-                        patientUid: patientUid,
+                        doctorUid: widget.doctorUid,
+                        patientUid: widget.patientUid,
                       ),
                     ),
                   );
@@ -386,7 +492,7 @@ class DoctorFamilyPage extends StatelessWidget {
                                               CrossAxisAlignment.center,
                                           children: [
                                             Text(
-                                              favorite?.name ?? patientName,
+                                              favorite?.name ?? widget.patientName,
                                               textAlign: TextAlign.center,
                                               style: Theme.of(context)
                                                   .textTheme
@@ -458,9 +564,9 @@ class DoctorFamilyPage extends StatelessWidget {
                                     builder: (_) => FamilyMemberProfilePage(
                                       member: member,
                                       familyDocId: familyDocId,
-                                      doctorUid: doctorUid,
-                                      patientUid: patientUid,
-                                      currentUserUid: doctorUid,
+                                      doctorUid: widget.doctorUid,
+                                      patientUid: widget.patientUid,
+                                      currentUserUid: widget.doctorUid,
                                       allowAddMemory: true,
                                     ),
                                   ),
@@ -468,17 +574,26 @@ class DoctorFamilyPage extends StatelessWidget {
                               },
                             ),
                           const SizedBox(height: 8),
-                          _recentMemoriesSection(context, memories, () {
-                            Navigator.of(context).push(
-                              MaterialPageRoute<void>(
-                                builder: (_) => FamilyMemoriesGalleryPage(
-                                  familyDocId: familyDocId,
-                                  title: 'All Memories',
-                                  forPatient: false,
+                          _recentMemoriesSection(
+                            context,
+                            memories,
+                            () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute<void>(
+                                  builder: (_) => FamilyMemoriesGalleryPage(
+                                    familyDocId: familyDocId,
+                                    title: 'All Memories',
+                                    forPatient: false,
+                                    canAdd: true,
+                                    doctorUid: widget.doctorUid,
+                                    patientUid: widget.patientUid,
+                                    createdByUid: widget.doctorUid,
+                                  ),
                                 ),
-                              ),
-                            );
-                          }),
+                              );
+                            },
+                            _addFamilyMemory,
+                          ),
                           const SizedBox(height: 12),
                           SizedBox(
                             height: 52,
@@ -488,8 +603,8 @@ class DoctorFamilyPage extends StatelessWidget {
                                   MaterialPageRoute<void>(
                                     builder: (_) => DoctorAddFamilyMemberPage(
                                       familyDocId: familyDocId,
-                                      doctorUid: doctorUid,
-                                      patientUid: patientUid,
+                                      doctorUid: widget.doctorUid,
+                                      patientUid: widget.patientUid,
                                     ),
                                   ),
                                 );
@@ -520,6 +635,10 @@ class DoctorFamilyPage extends StatelessWidget {
                                       title: 'Manage Memories',
                                       forPatient: false,
                                       canManage: true,
+                                      canAdd: true,
+                                      doctorUid: widget.doctorUid,
+                                      patientUid: widget.patientUid,
+                                      createdByUid: widget.doctorUid,
                                     ),
                                   ),
                                 );

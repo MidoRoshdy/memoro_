@@ -29,7 +29,8 @@ class FamilyMemberProfilePage extends StatefulWidget {
   final bool allowAddMemory;
 
   @override
-  State<FamilyMemberProfilePage> createState() => _FamilyMemberProfilePageState();
+  State<FamilyMemberProfilePage> createState() =>
+      _FamilyMemberProfilePageState();
 }
 
 class _FamilyMemberProfilePageState extends State<FamilyMemberProfilePage> {
@@ -100,7 +101,9 @@ class _FamilyMemberProfilePageState extends State<FamilyMemberProfilePage> {
         fit: StackFit.expand,
         children: [
           DecoratedBox(
-            decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2)),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.2),
+            ),
             child: Image.network(
               memory.imageUrl,
               fit: BoxFit.cover,
@@ -162,10 +165,52 @@ class _FamilyMemberProfilePageState extends State<FamilyMemberProfilePage> {
       final weeks = (diff.inDays / 7).floor();
       return '$weeks week${weeks == 1 ? '' : 's'} ago';
     }
-    if (diff.inDays >= 1) return '${diff.inDays} day${diff.inDays == 1 ? '' : 's'} ago';
-    if (diff.inHours >= 1) return '${diff.inHours} hour${diff.inHours == 1 ? '' : 's'} ago';
+    if (diff.inDays >= 1)
+      return '${diff.inDays} day${diff.inDays == 1 ? '' : 's'} ago';
+    if (diff.inHours >= 1)
+      return '${diff.inHours} hour${diff.inHours == 1 ? '' : 's'} ago';
     if (diff.inMinutes >= 1) return '${diff.inMinutes} min ago';
     return 'Just now';
+  }
+
+  Future<void> _confirmDeleteMember() async {
+    final shouldDelete = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Remove family member?'),
+        content: Text(
+          '${widget.member.name} will be removed from the family list. This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+    if (shouldDelete != true || !mounted) return;
+    try {
+      await FamilyService.deleteMember(
+        familyDocId: widget.familyDocId,
+        memberId: widget.member.id,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${widget.member.name} removed from family.')),
+      );
+      Navigator.of(context).pop();
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not remove family member.')),
+      );
+    }
   }
 
   Future<void> _editPersonalNote() async {
@@ -247,10 +292,11 @@ class _FamilyMemberProfilePageState extends State<FamilyMemberProfilePage> {
                           child: Text(
                             'Family Member',
                             textAlign: TextAlign.center,
-                            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w800,
-                            ),
+                            style: Theme.of(context).textTheme.titleLarge
+                                ?.copyWith(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                ),
                           ),
                         ),
                         const SizedBox(width: 48),
@@ -267,9 +313,8 @@ class _FamilyMemberProfilePageState extends State<FamilyMemberProfilePage> {
                               backgroundColor: Colors.white,
                               child: CircleAvatar(
                                 radius: 45,
-                                backgroundColor: AppColorPalette.blueSteel.withValues(
-                                  alpha: 0.18,
-                                ),
+                                backgroundColor: AppColorPalette.blueSteel
+                                    .withValues(alpha: 0.18),
                                 backgroundImage: member.imageUrl.isNotEmpty
                                     ? NetworkImage(member.imageUrl)
                                     : null,
@@ -291,27 +336,34 @@ class _FamilyMemberProfilePageState extends State<FamilyMemberProfilePage> {
                                 decoration: BoxDecoration(
                                   color: const Color(0xFF22C55E),
                                   shape: BoxShape.circle,
-                                  border: Border.all(color: Colors.white, width: 2),
+                                  border: Border.all(
+                                    color: Colors.white,
+                                    width: 2,
+                                  ),
                                 ),
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: Dimensions.verticalSpacingRegular),
+                        const SizedBox(
+                          height: Dimensions.verticalSpacingRegular,
+                        ),
                         Text(
                           member.name,
-                          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w900,
-                          ),
+                          style: Theme.of(context).textTheme.headlineSmall
+                              ?.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w900,
+                              ),
                         ),
                         const SizedBox(height: 4),
                         Text(
                           '❤  ${member.relation}',
-                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            color: const Color(0xFFE85A5A),
-                            fontWeight: FontWeight.w700,
-                          ),
+                          style: Theme.of(context).textTheme.titleSmall
+                              ?.copyWith(
+                                color: const Color(0xFFE85A5A),
+                                fontWeight: FontWeight.w700,
+                              ),
                         ),
                       ],
                     ),
@@ -329,18 +381,20 @@ class _FamilyMemberProfilePageState extends State<FamilyMemberProfilePage> {
                         children: [
                           Text(
                             'Primary Contact',
-                            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                              color: AppColorPalette.grey,
-                              fontWeight: FontWeight.w600,
-                            ),
+                            style: Theme.of(context).textTheme.titleSmall
+                                ?.copyWith(
+                                  color: AppColorPalette.grey,
+                                  fontWeight: FontWeight.w600,
+                                ),
                           ),
                           const SizedBox(height: 4),
                           Text(
                             member.phone,
-                            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                              color: AppColorPalette.blueSteel,
-                              fontWeight: FontWeight.w900,
-                            ),
+                            style: Theme.of(context).textTheme.headlineSmall
+                                ?.copyWith(
+                                  color: AppColorPalette.blueSteel,
+                                  fontWeight: FontWeight.w900,
+                                ),
                           ),
                         ],
                       ),
@@ -360,7 +414,9 @@ class _FamilyMemberProfilePageState extends State<FamilyMemberProfilePage> {
                           ),
                         ),
                         if (widget.allowAddMemory) ...[
-                          const SizedBox(width: Dimensions.horizontalSpacingRegular),
+                          const SizedBox(
+                            width: Dimensions.horizontalSpacingRegular,
+                          ),
                           Expanded(
                             child: FilledButton.icon(
                               onPressed: () {},
@@ -385,10 +441,11 @@ class _FamilyMemberProfilePageState extends State<FamilyMemberProfilePage> {
                       children: [
                         Text(
                           'Shared Memories',
-                          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w900,
-                          ),
+                          style: Theme.of(context).textTheme.titleLarge
+                              ?.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w900,
+                              ),
                         ),
                         const Spacer(),
                         if (widget.allowAddMemory)
@@ -398,12 +455,11 @@ class _FamilyMemberProfilePageState extends State<FamilyMemberProfilePage> {
                                 ? const SizedBox(
                                     width: 16,
                                     height: 16,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
                                   )
-                                : const Icon(
-                                    Icons.add,
-                                    color: Colors.white,
-                                  ),
+                                : const Icon(Icons.add, color: Colors.white),
                           ),
                         GestureDetector(
                           onTap: () {
@@ -412,18 +468,24 @@ class _FamilyMemberProfilePageState extends State<FamilyMemberProfilePage> {
                                 builder: (_) => FamilyMemoriesGalleryPage(
                                   familyDocId: widget.familyDocId,
                                   memberId: widget.member.id,
+                                  memberName: widget.member.name,
                                   title: 'Shared Memories',
                                   forPatient: !widget.allowAddMemory,
+                                  canAdd: widget.allowAddMemory,
+                                  doctorUid: widget.doctorUid,
+                                  patientUid: widget.patientUid,
+                                  createdByUid: widget.currentUserUid,
                                 ),
                               ),
                             );
                           },
                           child: Text(
                             'View All',
-                            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                              color: const Color(0xFFE85A5A),
-                              fontWeight: FontWeight.w700,
-                            ),
+                            style: Theme.of(context).textTheme.titleSmall
+                                ?.copyWith(
+                                  color: const Color(0xFFE85A5A),
+                                  fontWeight: FontWeight.w700,
+                                ),
                           ),
                         ),
                       ],
@@ -440,7 +502,8 @@ class _FamilyMemberProfilePageState extends State<FamilyMemberProfilePage> {
                             mainAxisSpacing: 10,
                             childAspectRatio: 1.2,
                           ),
-                      itemBuilder: (_, index) => _memoryTile(context, memories[index]),
+                      itemBuilder: (_, index) =>
+                          _memoryTile(context, memories[index]),
                     ),
                     if (memories.isEmpty)
                       Container(
@@ -452,16 +515,19 @@ class _FamilyMemberProfilePageState extends State<FamilyMemberProfilePage> {
                         ),
                         child: Text(
                           'No memories yet.',
-                          style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w700,
-                          ),
+                          style: Theme.of(context).textTheme.titleSmall
+                              ?.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                              ),
                         ),
                       ),
                     const SizedBox(height: Dimensions.verticalSpacingMedium),
                     Container(
                       width: double.infinity,
-                      padding: const EdgeInsets.all(Dimensions.verticalSpacingMedium),
+                      padding: const EdgeInsets.all(
+                        Dimensions.verticalSpacingMedium,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.white.withValues(alpha: 0.96),
                         borderRadius: BorderRadius.circular(14),
@@ -479,19 +545,24 @@ class _FamilyMemberProfilePageState extends State<FamilyMemberProfilePage> {
                               const SizedBox(width: 6),
                               Text(
                                 'Personal Notes',
-                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  color: AppColorPalette.blueSteel,
-                                  fontWeight: FontWeight.w800,
-                                ),
+                                style: Theme.of(context).textTheme.titleMedium
+                                    ?.copyWith(
+                                      color: AppColorPalette.blueSteel,
+                                      fontWeight: FontWeight.w800,
+                                    ),
                               ),
                               const Spacer(),
                               IconButton(
-                                onPressed: _savingNote ? null : _editPersonalNote,
+                                onPressed: _savingNote
+                                    ? null
+                                    : _editPersonalNote,
                                 icon: _savingNote
                                     ? const SizedBox(
                                         width: 16,
                                         height: 16,
-                                        child: CircularProgressIndicator(strokeWidth: 2),
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
                                       )
                                     : const Icon(
                                         Icons.add,
@@ -505,14 +576,38 @@ class _FamilyMemberProfilePageState extends State<FamilyMemberProfilePage> {
                             _personalNote.isNotEmpty
                                 ? _personalNote
                                 : 'No personal notes yet. Tap + to add.',
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              color: Colors.black87,
-                              height: 1.5,
-                            ),
+                            style: Theme.of(context).textTheme.bodyMedium
+                                ?.copyWith(color: Colors.black87, height: 1.5),
                           ),
                         ],
                       ),
                     ),
+                    if (widget.allowAddMemory) ...[
+                      const SizedBox(height: Dimensions.verticalSpacingMedium),
+                      SizedBox(
+                        height: 50,
+                        child: OutlinedButton.icon(
+                          onPressed: _confirmDeleteMember,
+                          icon: Icon(
+                            Icons.person_remove_outlined,
+                            color: Colors.red.shade700,
+                          ),
+                          label: Text(
+                            'Remove Family Member',
+                            style: TextStyle(
+                              color: Colors.red.shade700,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide(color: Colors.red.shade700),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: Dimensions.verticalSpacingLarge),
                   ],
                 ),

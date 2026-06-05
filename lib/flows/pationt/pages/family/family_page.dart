@@ -274,6 +274,7 @@ class FamilyPage extends StatelessWidget {
                           stream: FamilyService.watchFamilyMemories(
                             familyDocId,
                             limit: 12,
+                            forPatient: true,
                           ),
                           builder: (context, memorySnap) {
                             final memories =
