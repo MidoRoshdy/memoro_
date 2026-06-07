@@ -259,7 +259,11 @@ class DoctorPatientCareDashboardPage extends StatelessWidget {
     BuildContext context,
     Map<String, dynamic>? emergencyData,
   ) async {
-    final phone = _resolveEmergencyPhone(emergencyData);
+    final phone = await EmergencyRequestService.resolvePatientPhone(
+      emergencyData: emergencyData,
+      patientUid: patient.uid,
+      fallbackPhone: _resolveEmergencyPhone(emergencyData),
+    );
     if (phone.isEmpty) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -267,7 +271,8 @@ class DoctorPatientCareDashboardPage extends StatelessWidget {
       );
       return;
     }
-    final uri = Uri.parse('tel:$phone');
+    final normalizedPhone = phone.replaceAll(RegExp(r'\s+'), '');
+    final uri = Uri(scheme: 'tel', path: normalizedPhone);
     final launched = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!launched && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(

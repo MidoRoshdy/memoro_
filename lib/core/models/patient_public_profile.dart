@@ -68,7 +68,7 @@ class PatientPublicProfile {
       patientId: (data['patientId'] as String?)?.trim() ?? '',
       name: (data['patientName'] as String?)?.trim() ?? '',
       email: '',
-      phone: '',
+      phone: (data['patientPhone'] as String?)?.trim() ?? '',
       gender: '',
       imageUrl: (data['patientImageUrl'] as String?)?.trim() ?? '',
       age: age,

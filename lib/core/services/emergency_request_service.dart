@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'doctor_link_request_service.dart';
+
 abstract final class EmergencyRequestService {
   EmergencyRequestService._();
 
@@ -22,5 +24,22 @@ abstract final class EmergencyRequestService {
 
   static Stream<Map<String, dynamic>?> watchRequest(String requestDocId) {
     return requestRef(requestDocId).snapshots().map((snap) => snap.data());
+  }
+
+  static Future<String> resolvePatientPhone({
+    Map<String, dynamic>? emergencyData,
+    required String patientUid,
+    Map<String, dynamic>? linkData,
+    String fallbackPhone = '',
+  }) async {
+    final fromEmergency =
+        (emergencyData?['patientPhone'] as String?)?.trim() ?? '';
+    if (fromEmergency.isNotEmpty) return fromEmergency;
+
+    return DoctorLinkRequestService.resolvePatientPhone(
+      patientUid: patientUid,
+      linkData: linkData,
+      fallbackPhone: fallbackPhone,
+    );
   }
 }

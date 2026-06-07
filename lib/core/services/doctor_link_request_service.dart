@@ -189,9 +189,76 @@ abstract final class DoctorLinkRequestService {
       'patientName': patientName,
       'patientImageUrl': patientImageUrl,
       'patientAge': patient.age,
+      'patientPhone': patient.phone.trim(),
       'requestStatus': requestStatusPending,
       'createdAt': FieldValue.serverTimestamp(),
     });
     return ref.id;
+  }
+
+  /// Resolves the linked doctor/caregiver phone for a patient.
+  static Future<String> resolveLinkedDoctorPhone(String patientUid) async {
+    final uid = patientUid.trim();
+    if (uid.isEmpty) return '';
+
+    final linked = await watchLatestAcceptedForPatient(uid).first;
+    final data = linked?.data();
+    if (data == null) return '';
+
+    var doctorPhone = (data['doctorPhone'] as String?)?.trim() ?? '';
+    if (doctorPhone.isNotEmpty) return doctorPhone;
+
+    var doctorUid =
+        (data['doctorId'] as String?)?.trim() ??
+        (data['doctorUid'] as String?)?.trim() ??
+        '';
+    if (doctorUid.isEmpty) {
+      final pairId = (data['pairId'] as String?)?.trim() ?? '';
+      if (pairId.contains('_')) {
+        final parts = pairId.split('_');
+        doctorUid = parts.firstWhere(
+          (part) => part.trim().isNotEmpty && part.trim() != uid,
+          orElse: () => '',
+        );
+      }
+    }
+    if (doctorUid.isEmpty) return '';
+
+    try {
+      final caregiverSnap = await AuthService.caregiverProfileRef(doctorUid).get();
+      return (caregiverSnap.data()?['phone'] as String?)?.trim() ?? '';
+    } catch (_) {
+      return '';
+    }
+  }
+
+  /// Resolves a patient's phone from profile documents and link snapshots.
+  static Future<String> resolvePatientPhone({
+    required String patientUid,
+    Map<String, dynamic>? linkData,
+    String fallbackPhone = '',
+  }) async {
+    final uid = patientUid.trim();
+    final fromFallback = fallbackPhone.trim();
+    if (fromFallback.isNotEmpty) return fromFallback;
+
+    final fromLink = (linkData?['patientPhone'] as String?)?.trim() ?? '';
+    if (fromLink.isNotEmpty) return fromLink;
+
+    if (uid.isEmpty) return '';
+
+    try {
+      final snap = await AuthService.patientProfileRef(uid).get();
+      final phone = (snap.data()?['phone'] as String?)?.trim() ?? '';
+      if (phone.isNotEmpty) return phone;
+    } catch (_) {}
+
+    try {
+      final legacy = await AuthService.legacyPerUserPatientRef(uid).get();
+      final phone = (legacy.data()?['phone'] as String?)?.trim() ?? '';
+      if (phone.isNotEmpty) return phone;
+    } catch (_) {}
+
+    return '';
   }
 }

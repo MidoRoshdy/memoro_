@@ -4,7 +4,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../../../core/services/auth_service.dart';
 import '../../../../core/constants/dimensions.dart';
 import '../../../../core/services/doctor_link_request_service.dart';
 import '../../../../core/theme/app_color_palette.dart';
@@ -48,27 +47,8 @@ class _SosPageState extends State<SosPage> {
     });
   }
 
-  Future<String> _resolveEmergencyContactPhone(String patientUid) async {
-    final linked = await DoctorLinkRequestService.watchLatestAcceptedForPatient(
-      patientUid,
-    ).first;
-    final data = linked?.data();
-    if (data == null) return '';
-
-    final directPhone = (data['doctorPhone'] as String?)?.trim() ?? '';
-    if (directPhone.isNotEmpty) return directPhone;
-
-    final doctorUid = (data['doctorId'] as String?)?.trim() ?? '';
-    if (doctorUid.isEmpty) return '';
-
-    try {
-      final caregiverSnap = await AuthService.caregiverProfileRef(doctorUid).get();
-      final caregiverPhone =
-          (caregiverSnap.data()?['phone'] as String?)?.trim() ?? '';
-      return caregiverPhone;
-    } catch (_) {
-      return '';
-    }
+  Future<String> _resolveEmergencyContactPhone(String patientUid) {
+    return DoctorLinkRequestService.resolveLinkedDoctorPhone(patientUid);
   }
 
   Future<void> _callEmergencyContact() async {
@@ -83,7 +63,7 @@ class _SosPageState extends State<SosPage> {
       return;
     }
     final launched = await launchUrl(
-      Uri.parse('tel:$phone'),
+      Uri(scheme: 'tel', path: phone.replaceAll(RegExp(r'\s+'), '')),
       mode: LaunchMode.externalApplication,
     );
     if (!launched && mounted) {
@@ -202,11 +182,16 @@ class _SosPageState extends State<SosPage> {
       }
       final pairId = [doctorUid, user.uid]..sort();
       final location = await _readCurrentLocation();
+      final patientPhone = await DoctorLinkRequestService.resolvePatientPhone(
+        patientUid: user.uid,
+        linkData: data,
+      );
       await SendHelpRequestUseCase().execute(
         pairId: '${pairId.first}_${pairId.last}',
         patientUid: user.uid,
         doctorUid: doctorUid,
         patientName: patientName,
+        patientPhone: patientPhone,
         latitude: location.latitude,
         longitude: location.longitude,
         locationText: location.locationText,
